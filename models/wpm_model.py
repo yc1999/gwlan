@@ -1,9 +1,12 @@
+from utils.tokenizer import WPMTokenizer
 from torch.optim import Adam
 from transformers.optimization import get_linear_schedule_with_warmup
 from modules.positional_encoder import RelativePositionalEncoder, SinusoidalPostionalEncoder
 from models.base_model import BaseModel
 import torch
 import torch.nn as nn
+import os
+from typing import Dict
 
 class WPMModel(BaseModel):
     def __init__(self, args):
@@ -20,12 +23,14 @@ class WPMModel(BaseModel):
             nn.Linear(args.d_model, args.d_model),
             nn.LayerNorm(args.d_model),
             nn.ReLU(inplace=True),
-            nn.Dropout(p=0.1),
+            nn.Dropout(p=args.dropout),
             nn.Linear(args.d_model, args.vocab_size)
         )
 
         self.loss_fn = nn.CrossEntropyLoss()
         #TODO:需要同一对参数进行初始化吗？nn.Embedding有自己的初始化函数~
+
+        self.masked_tokenizer = WPMTokenizer("./dataset/en2de/vocab/vocab.50K.de")
 
     def forward(self, src_input_ids, src_attention_mask, masked_input_ids, masked_attention_mask, masked_position_ids):
         """
@@ -61,6 +66,15 @@ class WPMModel(BaseModel):
         labels = batch["labels"]
         train_loss = self.loss_fn.forward(logits.view(-1, self.args.vocab_size), labels.view(-1))
         self.log("train_loss", train_loss.detach().cpu(), prog_bar=True)
+        
+        # log gradient norm
+        parameters = [p for p in self.parameters() if p.grad is not None]
+        if len(parameters) == 0:
+            total_norm = 0.0
+        else:
+            total_norm = torch.norm(torch.stack([torch.norm(p.grad.detach()) for p in parameters])).detach().cpu()
+        self.log("grad", total_norm)
+        
         return train_loss
     
     def validation_step(self, batch, batch_idx):
@@ -81,12 +95,11 @@ class WPMModel(BaseModel):
         # logits: (batch_size, vocab_size)
         logits = logits[index]
 
-        # TODO:使用human typed character进行概率修正。
         # type_mask: (batch_size, vocab_size)
         type_mask = batch["type_mask"]
         logits_mask = torch.logical_not(type_mask)
         # preds: (batch_size, )
-        logits = logits.masked_fill(logits_mask, 0.0)
+        logits = logits.masked_fill(logits_mask, -float("inf"))
         preds = torch.max(logits, dim=-1).indices.cpu().numpy()
 
         true = sum(labels == preds)
@@ -98,6 +111,65 @@ class WPMModel(BaseModel):
         size = sum([result[1] for result in outputs ])
         valid_acc = true / size
         self.log("valid_acc", valid_acc, on_epoch=True, prog_bar=True)
+
+    def test_step(self, batch, batch_idx):
+        inputs = self.get_inputs(batch)
+        
+        # labels: (batch_size, masked_seq_len)
+        labels =  batch["labels"]
+        
+        # logits: (batch_size, masked_seq_len, vocab_size)
+        logits = self.forward(**inputs)    
+
+        # masked_position_ids: (batch_size, masked_seq_len)
+        masked_position_ids = batch["masked_position_ids"]
+        index = (masked_position_ids == 1)
+        # labels: (batch_size, )
+        labels = labels[index].cpu().numpy()
+        
+        # logits: (batch_size, vocab_size)
+        logits = logits[index]
+
+        # type_mask: (batch_size, vocab_size)
+        type_mask = batch["type_mask"]
+        logits_mask = torch.logical_not(type_mask)
+        # preds: (batch_size, )
+        logits = logits.masked_fill(logits_mask, -float('inf'))
+        preds = torch.max(logits, dim=-1).indices.cpu().numpy()
+
+        true = sum(labels == preds)
+        size = preds.shape[0]
+        
+        # masked_tokenizer = WPMTokenizer("./dataset/en2de/vocab/vocab.50K.de")
+        with open(self.args.pred_file, "a") as f:
+            for idx, pred in enumerate(preds):
+                f.write(self.masked_tokenizer.decoder[labels[idx]] + " " +self.masked_tokenizer.decoder[pred] + "\n")
+                # f.write(self.masked_tokenizer.decoder[labels[idx]] + "\n")
+
+        return true, size
+        # return self.validation_step(batch, batch_idx)
+
+    def test_epoch_end(self, outputs) :
+        true = sum([result[0] for result in outputs])
+        size = sum([result[1] for result in outputs])
+        test_acc = true / size
+        self.log("test_acc", test_acc, on_epoch=True, prog_bar=True)
+
+    def log_grad_norm(self, grad_norm_dict: Dict[str, float]) -> None:
+        """Override this method to change the default behaviour of ``log_grad_norm``.
+
+        If clipping gradients, the gradients will not have been clipped yet.
+
+        Args:
+            grad_norm_dict: Dictionary containing current grad norm metrics
+
+        Example::
+
+            # DEFAULT
+            def log_grad_norm(self, grad_norm_dict):
+                self.log_dict(grad_norm_dict, on_step=False, on_epoch=True, prog_bar=False, logger=True)
+        """
+        self.log_dict(grad_norm_dict, on_step=True, on_epoch=True, prog_bar=False, logger=True)
 
     def configure_optimizers(self):
         # #TODO: optimizer的learning rate需要跟Attention is All You Need 论文里面对齐~ 可能需要自己写optimizer
@@ -114,16 +186,35 @@ class WPMModel(BaseModel):
             }
         ]
 
+    @staticmethod
+    def update_output_dirs(args):
+        if args.setting == "debug":
+            args.save_dir = "./save/tmp"
+        else:
+            args.save_dir = os.path.join(args.save_dir, args.model_name_or_path)
+
+        # parameters not strongly associated with model
+        data_paras = "seed: {} - max_epochs: {} - gpus: {} - limit_train_batches: {} - train_bacth_size: {} - accumulate_grad_batches: {} - gradient_clip_val: {} - lr: {} - dropout: {}".format(args.seed, args.max_epochs, args.gpus, args.limit_train_batches, args.train_batch_size, args.gradient_clip_val, args.accumulate_grad_batches, args.learning_rate, args.dropout)
+        args.save_dir = os.path.join(args.save_dir, data_paras)
+        
+        # parameters strongly associated with model
+        # model_paras = "use_label_fusion: {} - use_attn: {} - add_label_info: {} - use_res: {}".format(args.use_label_fusion, args.use_attn, args.add_label_info, args.use_res)
+        # model_paras = os.path.join(model_paras, time.strftime("%Y%m%d-%H%M", time.localtime()))
+        args.log_dir = os.path.join(args.save_dir, args.log_dir)
+        args.ckpt_dir = os.path.join(args.save_dir, args.ckpt_dir)
+        args.pred_file = os.path.join(args.save_dir, args.pred_file)
+        return args
+
 class WPMEmbeddings(nn.Module):
     """Construct the embeddings from word, position and ~~token_type~~ embeddings."""
     def __init__(self, args):
         super().__init__()
         
         self.src_LayerNorm = nn.LayerNorm(normalized_shape=512) # eps is set to default->0.00001
-        self.src_dropout = nn.Dropout(0.1)
+        self.src_dropout = nn.Dropout(args.dropout)
 
         self.masked_LayerNorm = nn.LayerNorm(normalized_shape=512) # eps is set to default->0.00001
-        self.masked_dropout = nn.Dropout(0.1)
+        self.masked_dropout = nn.Dropout(args.dropout)
         
         # token encoder
         self.src_token_encoder = nn.Embedding(num_embeddings=args.vocab_size, embedding_dim=args.d_model, padding_idx=3)
