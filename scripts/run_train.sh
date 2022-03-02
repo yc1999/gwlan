@@ -1,18 +1,19 @@
 #!/bin/bash
 
-export CUDA_VISIBLE_DEVICES=2,3
+export CUDA_VISIBLE_DEVICES=1
 
 python main.py \
+    --limit_train_batches 0.01 \
     --strategy ddp \
-    --val_check_interval 1.0 \
+    --check_val_every_n_epoch 1 \
     --train_dir ./dataset/en2de/train/train.en2de.de.out.bi_context \
     --valid_dir ./dataset/wmt14_dev_data/bi_context_raw_data/dev.en2de.de.out.bi_context \
     --test_dir ./dataset/wmt14_test_data/bi_context_raw_data/test.en2de.de.out.bi_context \
     --model_name_or_path wpm \
-    --train_batch_size 64 \
+    --train_batch_size 100 \
     --max_seq_len 128 \
-    --max_epochs 100 \
-    --gpus 2 \
+    --max_epochs 1000 \
+    --gpus 1 \
     --accumulate_grad_batches 1 \
     --vocab_size 50005 \
     --d_model 512 \
@@ -20,5 +21,6 @@ python main.py \
     --warmup_ratio 0.1 \
     --do_train \
     --do_test \
-    --setting \
-    run
+    --setting run \
+    --track_grad_norm 2 \
+    --gradient_clip_val 1.0 \

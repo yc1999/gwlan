@@ -22,6 +22,7 @@ class WPMTokenizer:
         self.mask_token_id = self.encoder["<mask>"]
 
         self.vocabs = [ item[0] for item in sorted(self.encoder.items(), key=lambda x:x[1]) ]
+        self.decoder = dict([[item[1], item[0]] for item in self.encoder.items()])
 
     def tokenize(self, text):
         """

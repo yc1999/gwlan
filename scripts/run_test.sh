@@ -1,15 +1,15 @@
 #!/bin/bash
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=2
 
 python main.py \
     --strategy ddp \
-    --check_val_every_n_epoch 10 \
+    --val_check_interval 1.0 \
     --train_dir ./dataset/wmt14_dev_data/bi_context_raw_data/dev.en2de.de.out.bi_context \
     --valid_dir ./dataset/wmt14_dev_data/bi_context_raw_data/dev.en2de.de.out.bi_context \
     --test_dir ./dataset/wmt14_dev_data/bi_context_raw_data/dev.en2de.de.out.bi_context \
     --model_name_or_path wpm \
-    --train_batch_size 64 \
+    --train_batch_size 32 \
     --max_seq_len 128 \
     --max_epochs 1000 \
     --gpus 1 \
@@ -21,9 +21,8 @@ python main.py \
     --warmup_ratio 0.1 \
     --do_test \
     --setting debug \
-    --do_train \
     --track_grad_norm 2 \
     --gradient_clip_val 1.0 \
+    --ckpt_path "/home/yc21/project/gwlan/save/tmp/seed: 42 - epochs: 1000 - gpus: 1 - train_bacth_size: 32 - accumulate_grad_batches: 1.0 - gradient_clip_val: 1 - lr:0.0005 - dropout: 0.1/last.ckpt" \
+    # --do_train \
     # --test_dir ./dataset/wmt14_test_data/bi_context_raw_data/test.en2de.de.out.bi_context \
-    # --val_check_interval 2.0 \
-    # --ckpt_path "/home/yc21/project/gwlan/save/tmp/seed: 42 - epochs: 1000 - gpus: 1 - train_bacth_size: 64 - accumulate_grad_batches: 1/epoch=32--valid_acc=0.8854.ckpt" \

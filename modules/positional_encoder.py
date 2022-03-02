@@ -7,6 +7,7 @@ class RelativePositionalEncoder(nn.Module):
     `0` represents on the left of the <mask>;
     `1` represents the postion of the <mask>;
     `2` represents on the right of the <mask>;
+    `3` represents the positions of the <pad>;
     """
     def __init__(self, d_model, dropout: float = 0.1):
         # self.dropout = nn.Dropout(p=dropout)
