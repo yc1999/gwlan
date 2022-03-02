@@ -35,32 +35,33 @@ class WPMDataModel(pl.LightningDataModule):
         return
 
     def train_dataloader(self):
-        #TODO：shuffle
+        #TODO：shuffle=False, use only the first 400,000 pairs
         train_dataloader = DataLoader(
-            self.train_dataset, shuffle=False, batch_size=self.args.train_batch_size, num_workers=0, collate_fn=self.collate_fn,
+            self.train_dataset, shuffle=True, batch_size=self.args.train_batch_size, num_workers=4, collate_fn=self.collate_fn,
             pin_memory=True
         )
         return train_dataloader
  
     def val_dataloader(self):
-        #TODO:shuffle
         val_dataloader = DataLoader(
-            self.val_dataset, shuffle=True, batch_size=self.args.train_batch_size, num_workers=0, collate_fn=self.collate_fn,
+            self.val_dataset, shuffle=False, batch_size=self.args.train_batch_size, num_workers=4, collate_fn=self.collate_fn,
             pin_memory=True
         )
         return val_dataloader
 
     def test_dataloader(self):
         test_dataloader = DataLoader(
-            self.test_dataset, shuffle=True, batch_size=self.args.train_batch_size, num_workers=0, collate_fn=self.collate_fn,
+            self.test_dataset, shuffle=False, batch_size=self.args.train_batch_size, num_workers=4, collate_fn=self.collate_fn,
             pin_memory=True
         )
         return test_dataloader
 
-    def collate_fn(self, batch):
-        """This is used for padding, defaultly, we pad to max_seq_len in **current batch**!
+    def collate_fn(self, examples):
+        """In `decay` setting, batch is examples not features, so we should first convert examples to features.
         """
         #batch_size = len(batch)
+        batch = self.convert_examples_to_features(examples)
+
         src_input_ids = [ torch.tensor(f.src_input_ids, dtype=torch.int) for f in batch ]
         src_attention_mask = [ torch.tensor(f.src_attention_mask, dtype=torch.bool) for f in batch ]
         masked_input_ids = [ torch.tensor(f.masked_input_ids, dtype=torch.int) for f in batch ]
@@ -88,7 +89,7 @@ class WPMDataModel(pl.LightningDataModule):
             "masked_attention_mask": masked_attention_mask,
             "masked_position_ids": masked_position_ids,
             "labels": labels,
-            "types": types,
+            # "types": types,
             "type_mask": type_mask,
         }
 
@@ -124,12 +125,12 @@ class WPMDataModel(pl.LightningDataModule):
             # print(f"Saving examples into cached file {cached_examples_file}")
             # torch.save(examples, cached_examples_file)
 
-            features = self.convert_examples_to_features(examples)
+            # features = self.convert_examples_to_features(examples)
             # print("{} total records: {}, {}".format(mode, len(results["features"]), results["stat_info"]))
             # print(f"Saving features into cached file {cached_features_file}")
             # torch.save(features, cached_features_file)
             
-            return features
+            return examples
     
     def read_examples_from_file(self, mode):
         #TODO：file place
@@ -167,7 +168,7 @@ class WPMDataModel(pl.LightningDataModule):
         masked_len_lst = []
         stat_info = dict()
 
-        for (ex_index, example) in enumerate( tqdm(examples) ):
+        for (ex_index, example) in enumerate( examples ):
             # if ex_index % 1000 == 0:
             #     print("#"*15)
             #     print(f"Writing example {ex_index} of {len(examples)}")
@@ -222,7 +223,7 @@ class WPMDataModel(pl.LightningDataModule):
         stat_info["masked_len"]["std"] = np.std(masked_len_lst, ddof=1)
         stat_info["masked_len"]["max"] = max(masked_len_lst)
 
-        print(stat_info)
+        # print(stat_info)
 
         return features
 
@@ -264,6 +265,7 @@ class WPMDataModel(pl.LightningDataModule):
         parser.add_argument("--d_model", type=int, required=True, help="dimension of the model")
         parser.add_argument("--learning_rate", type=float, required=True, help="learning rate for optimizer.")
         parser.add_argument("--warmup_ratio", type=float, required=True, help="warmup_ratio for training with warm up.")
+        parser.add_argument("--dropout", type=float, default=0.1, help="dropout ratio for model.")
 
         parser.add_argument("--train_batch_size", default=8, type=int, help="Batch size per GPU/CPU for training.")
         parser.add_argument("--eval_batch_size", default=32, type=int, help="Batch size per GPU/CPU for evaluation.")
@@ -271,10 +273,15 @@ class WPMDataModel(pl.LightningDataModule):
     
         parser.add_argument("--log_dir", default="./log", type=str, help="The log directory")
         parser.add_argument("--ckpt_dir", default=".", type=str, help="The ckpt directory")
-    
+        parser.add_argument("--ckpt_path", default=".", type=str)
+        parser.add_argument("--save_dir", default="./save", type=str)
+        parser.add_argument("--pred_file", default="pred.json", type=str, help="The pred file")
+
         parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
         parser.add_argument("--do_eval", action="store_true", help="Whether to run eval on the dev set.")
         parser.add_argument("--do_test", action="store_true", help="Whether to run predictions on the test set.")
+        
+        parser.add_argument("--setting", type=str, default="debug", choices=["debug", "run"], help="debug or run")
         return parent_parser
 
 

@@ -58,7 +58,7 @@ class WPMDataModel(pl.LightningDataModule):
         return test_dataloader
 
     def collate_fn(self, batch):
-        """This is used for padding, defaultly, we use pad to max_seq_len, but we should use max_seq_len in current batch #FIXME
+        """This is used for padding, defaultly, we pad to max_seq_len in **current batch**!
         """
         #batch_size = len(batch)
         src_input_ids = [ torch.tensor(f.src_input_ids, dtype=torch.int) for f in batch ]
@@ -88,7 +88,7 @@ class WPMDataModel(pl.LightningDataModule):
             "masked_attention_mask": masked_attention_mask,
             "masked_position_ids": masked_position_ids,
             "labels": labels,
-            "types": types,
+            # "types": types,
             "type_mask": type_mask,
         }
 
@@ -126,8 +126,8 @@ class WPMDataModel(pl.LightningDataModule):
 
             features = self.convert_examples_to_features(examples)
             # print("{} total records: {}, {}".format(mode, len(results["features"]), results["stat_info"]))
-            print(f"Saving features into cached file {cached_features_file}")
-            torch.save(features, cached_features_file)
+            # print(f"Saving features into cached file {cached_features_file}")
+            # torch.save(features, cached_features_file)
             
             return features
     
