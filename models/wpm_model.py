@@ -15,9 +15,6 @@ class WPMModel(BaseModel):
         self.embeddings = WPMEmbeddings(args)
         self.transformer = nn.Transformer(batch_first=True, d_model=512, nhead=8, num_encoder_layers=6, num_decoder_layers=6, dim_feedforward=2048)  # This is the default params in torch.nn.Transformer document
 
-        #TODO:怎么使用LayerNorm，ReLU和Dropout
-        # LayerNorm用于归一化，ReLU()用于非线性化，Dropout用于防止过拟合。
-        
         #   分类头参考自huggingface BertMaskLM 
         self.cls = nn.Sequential(
             nn.Linear(args.d_model, args.d_model),
@@ -30,6 +27,8 @@ class WPMModel(BaseModel):
         self.loss_fn = nn.CrossEntropyLoss()
         #TODO:需要同一对参数进行初始化吗？nn.Embedding有自己的初始化函数~
 
+        #TODO:怎么使用LayerNorm，ReLU和Dropout
+        # LayerNorm用于归一化，ReLU()用于非线性化，Dropout用于防止过拟合。
         self.masked_tokenizer = WPMTokenizer("./dataset/en2de/vocab/vocab.50K.de")
 
     def forward(self, src_input_ids, src_attention_mask, masked_input_ids, masked_attention_mask, masked_position_ids):
@@ -87,8 +86,8 @@ class WPMModel(BaseModel):
         logits = self.forward(**inputs)    
 
         # masked_position_ids: (batch_size, masked_seq_len)
-        masked_position_ids = batch["masked_position_ids"]
-        index = (masked_position_ids == 1)
+        # masked_position_ids = batch["masked_position_ids"]
+        index = (labels != -100)
         # labels: (batch_size, )
         labels = labels[index].cpu().numpy()
         
@@ -122,8 +121,8 @@ class WPMModel(BaseModel):
         logits = self.forward(**inputs)    
 
         # masked_position_ids: (batch_size, masked_seq_len)
-        masked_position_ids = batch["masked_position_ids"]
-        index = (masked_position_ids == 1)
+        # masked_position_ids = batch["masked_position_ids"]
+        index = (labels != -100)
         # labels: (batch_size, )
         labels = labels[index].cpu().numpy()
         
@@ -173,8 +172,15 @@ class WPMModel(BaseModel):
 
     def configure_optimizers(self):
         # #TODO: optimizer的learning rate需要跟Attention is All You Need 论文里面对齐~ 可能需要自己写optimizer
-        optimizer = Adam(self.parameters(), lr=self.args.learning_rate)
-        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=self.total_step * self.args.warmup_ratio, num_training_steps = self.total_step)
+        optimizer = Adam(self.parameters(), lr=self.args.learning_rate, betas=(0.9, 0.98), eps=1e-9)
+        if self.args.scheduler == "linear":
+            if self.args.warmup_steps == -1:
+                scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=self.total_step * self.args.warmup_ratio, num_training_steps = self.total_step)
+            else:
+                scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=self.args.warmup_steps, num_training_steps = self.total_step)
+        elif self.args.scheduler == "noam":
+            scheduler = self.get_noam_schedule_with_warmup(optimizer, num_warmup_steps=self.args.warmup_steps, num_training_steps = self.total_step)
+
         return [
             {
                 "optimizer": optimizer,
@@ -194,7 +200,12 @@ class WPMModel(BaseModel):
             args.save_dir = os.path.join(args.save_dir, args.model_name_or_path)
 
         # parameters not strongly associated with model
-        data_paras = "seed: {} - max_epochs: {} - gpus: {} - limit_train_batches: {} - train_bacth_size: {} - accumulate_grad_batches: {} - gradient_clip_val: {} - lr: {} - dropout: {}".format(args.seed, args.max_epochs, args.gpus, args.limit_train_batches, args.train_batch_size, args.gradient_clip_val, args.accumulate_grad_batches, args.learning_rate, args.dropout)
+        data_paras = "seed: {} - max_epochs: {} - max_steps: {} - warmup_ratio: {} - warmup_steps: {} - train_dataset_ratio: {} - train_bacth_size: {} - gpus: {} - accumulate_grad_batches: {} - lr: {} -scheduler: {} - dropout: {} - gradient_clip_val: {}".format(args.seed, args.max_epochs, args.max_steps, 
+                                                    args.warmup_ratio, args.warmup_steps,
+                                                    args.train_dataset_ratio, args.train_batch_size, 
+                                                    args.gpus, args.accumulate_grad_batches,
+                                                    args.learning_rate, args.scheduler,
+                                                    args.dropout, args.gradient_clip_val, )
         args.save_dir = os.path.join(args.save_dir, data_paras)
         
         # parameters strongly associated with model
@@ -222,8 +233,9 @@ class WPMEmbeddings(nn.Module):
 
         # position encoder
         self.src_pos_encoder = SinusoidalPostionalEncoder(max_seq_len=args.max_seq_len, d_model=512)
-        self.masked_pos_encoder = RelativePositionalEncoder(d_model=512)
-        
+        # ~~self.masked_pos_encoder = RelativePositionalEncoder(d_model=512)~~
+        self.masked_pos_encoder = self.src_pos_encoder
+
         # src_position ids
         self.register_buffer("src_position_ids", torch.arange(args.max_seq_len).expand((1,-1)))
     
