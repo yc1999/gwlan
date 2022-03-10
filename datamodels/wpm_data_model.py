@@ -37,22 +37,21 @@ class WPMDataModel(pl.LightningDataModule):
     def train_dataloader(self):
         #TODO：shuffle
         train_dataloader = DataLoader(
-            self.train_dataset, shuffle=False, batch_size=self.args.train_batch_size, num_workers=0, collate_fn=self.collate_fn,
+            self.train_dataset, shuffle=True, batch_size=self.args.train_batch_size, num_workers=0, collate_fn=self.collate_fn,
             pin_memory=True
         )
         return train_dataloader
  
     def val_dataloader(self):
-        #TODO:shuffle
         val_dataloader = DataLoader(
-            self.val_dataset, shuffle=True, batch_size=self.args.train_batch_size, num_workers=0, collate_fn=self.collate_fn,
+            self.val_dataset, shuffle=False, batch_size=self.args.train_batch_size, num_workers=0, collate_fn=self.collate_fn,
             pin_memory=True
         )
         return val_dataloader
 
     def test_dataloader(self):
         test_dataloader = DataLoader(
-            self.test_dataset, shuffle=True, batch_size=self.args.train_batch_size, num_workers=0, collate_fn=self.collate_fn,
+            self.test_dataset, shuffle=False, batch_size=self.args.train_batch_size, num_workers=0, collate_fn=self.collate_fn,
             pin_memory=True
         )
         return test_dataloader
@@ -132,7 +131,6 @@ class WPMDataModel(pl.LightningDataModule):
             return features
     
     def read_examples_from_file(self, mode):
-        #TODO：file place
         if mode == "train":
             file_path = self.args.train_dir
         elif mode == "dev":
