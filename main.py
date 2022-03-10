@@ -3,6 +3,7 @@ import torch
 from datamodels.wpm_data_model_decay import WPMDataModel
 from models.base_model import BaseModel
 from models.wpm_model import WPMModel
+from models.vanilla_model import VanillaModel
 from pytorch_lightning import Trainer, seed_everything, loggers
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, LearningRateMonitor
 
@@ -27,6 +28,9 @@ def main(args):
 
     if args.model_name_or_path == "wpm":
         Model = WPMModel
+        DataModel = WPMDataModel
+    elif args.model_name_or_path == "vanilla":
+        Model = VanillaModel
         DataModel = WPMDataModel
     else:
         raise ValueError("model type not found : {args.model_name_or_path}")
