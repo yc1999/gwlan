@@ -1,3 +1,4 @@
+from audioop import bias
 from utils.tokenizer import WPMTokenizer
 from torch.optim import Adam
 from transformers.optimization import get_linear_schedule_with_warmup
@@ -23,6 +24,9 @@ class WPMModel(BaseModel):
             nn.Dropout(p=args.dropout),
             nn.Linear(args.d_model, args.vocab_size)
         )
+        # self.cls = nn.Linear(args.d_model, args.vocab_size, bias=False)
+        # shared weight
+        # self.cls.weight = self.embeddings.masked_token_encoder.weight 
 
         self.loss_fn = nn.CrossEntropyLoss()
         #TODO:需要同一对参数进行初始化吗？nn.Embedding有自己的初始化函数~
@@ -66,14 +70,35 @@ class WPMModel(BaseModel):
         train_loss = self.loss_fn.forward(logits.view(-1, self.args.vocab_size), labels.view(-1))
         self.log("train_loss", train_loss.detach().cpu(), prog_bar=True)
         
-        # log gradient norm
-        parameters = [p for p in self.parameters() if p.grad is not None]
-        if len(parameters) == 0:
-            total_norm = 0.0
-        else:
-            total_norm = torch.norm(torch.stack([torch.norm(p.grad.detach()) for p in parameters])).detach().cpu()
-        self.log("grad", total_norm)
+        # prediction
+        # index = (labels != -100)
+        # labels = labels[index].cpu().numpy()
+        # logits = logits[index]
+        # type_mask = batch["type_mask"]
+        # logits_mask = torch.logical_not(type_mask)
+        # logits = logits.masked_fill(logits_mask, -float("inf"))
+        # preds = torch.max(logits, dim=-1).indices.cpu().numpy()
+        # true = sum(labels == preds)
+        # size = preds.shape[0]
+        # self.log("train_acc", true/size, prog_bar=True)
         
+        # log gradient norm
+        # parameters = [p for p in self.parameters() if p.grad is not None]
+        # if len(parameters) == 0:
+        #     total_norm = 0.0
+        # else:
+        #     total_norm = torch.norm(torch.stack([torch.norm(p.grad.detach()) for p in parameters])).detach().cpu()
+        # self.log("grad", total_norm)
+
+        
+        # for name,params in self.named_parameters():
+        #     if params.requires_grad == False:
+        #         #print(params.requires_grad)
+        #         tensorboard = self.logger.experiment
+        #         log_str = "{}\t{:.4f}\t{:.4f}\t{:.4f}\t{:.4f}".format(name, params.detach().min(), params.detach().max(), params.detach().mean(), params.detach().std())
+        #         tensorboard.add_text(name, log_str)
+        #         print("{}\t{:.4f}\t{:.4f}\t{:.4f}\t{:.4f}".format(name, params.detach().min(), params.detach().max(), params.detach().mean(), params.detach().std()))
+
         return train_loss
     
     def validation_step(self, batch, batch_idx):
@@ -172,7 +197,8 @@ class WPMModel(BaseModel):
 
     def configure_optimizers(self):
         # #TODO: optimizer的learning rate需要跟Attention is All You Need 论文里面对齐~ 可能需要自己写optimizer
-        optimizer = Adam(self.parameters(), lr=self.args.learning_rate, betas=(0.9, 0.98), eps=1e-9)
+        # filter requires_grad() Parameter
+        optimizer = Adam( filter(lambda p : p.requires_grad, self.parameters()), lr=self.args.learning_rate, betas=(0.9, 0.98), eps=1e-9)
         if self.args.scheduler == "linear":
             if self.args.warmup_steps == -1:
                 scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=self.total_step * self.args.warmup_ratio, num_training_steps = self.total_step)
