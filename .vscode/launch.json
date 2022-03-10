@@ -16,8 +16,11 @@
             "env": {"CUDA_VISIBLE_DEVICES":"1"},
             
             "args": [
-                "--strategy",
-                "ddp",
+                // "--limit_train_batches",
+                // "1.0",
+
+                // "--strategy",
+                // "ddp",
 
                 "--val_check_interval",
                 "1.0",
@@ -37,7 +40,7 @@
                 "wpm",
                 
                 "--train_batch_size",
-                "32",
+                "100",
                 
                 "--max_seq_len",
                 "128",
@@ -63,6 +66,11 @@
                 "--warmup_ratio",
                 "0.1",
 
+                "--scheduler",
+                "linear",
+
+                "--do_train",
+
                 "--do_test",
 
                 "--setting",
@@ -74,8 +82,8 @@
                 "--gradient_clip_val",
                 "1.0",
                 
-                "--ckpt_path",
-                "/home/yc21/project/gwlan/save/tmp/seed: 42 - epochs: 1000 - gpus: 1 - train_bacth_size: 32 - accumulate_grad_batches: 1.0 - gradient_clip_val: 1 - lr:0.0005 - dropout: 0.1/last.ckpt"
+                // "--ckpt_path",
+                // "/home/yc21/project/gwlan/save/tmp/seed: 42 - max_epochs: 100 - gpus: 1 - limit_train_batches: 1.0 - train_bacth_size: 32 - accumulate_grad_batches: 1.0 - gradient_clip_val: 1 - lr: 5e-05 - dropout: 0.1/epoch=89--valid_acc=0.2295.ckpt"
             ]
         }
     ]
