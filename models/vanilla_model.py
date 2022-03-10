@@ -8,7 +8,7 @@ import torch.nn as nn
 import os
 from typing import Dict
 
-class WPMModel(BaseModel):
+class VanillaModel(BaseModel):
     def __init__(self, args):
         super().__init__(args)
         
@@ -42,7 +42,10 @@ class WPMModel(BaseModel):
         src_embeddings, masked_embeddings = self.embeddings(src_input_ids=src_input_ids, masked_input_ids=masked_input_ids, masked_position_ids=masked_position_ids)
         
         # logits: (batch_size, masked_len, d_model)
-        hidden_states = self.transformer.forward(src=src_embeddings, tgt=masked_embeddings, src_key_padding_mask=src_attention_mask, tgt_key_padding_mask=masked_attention_mask, memory_key_padding_mask=src_attention_mask)
+        masked_len = masked_attention_mask.size(1)
+        shift_masked_attention_mask = nn.Transformer.generate_square_subsequent_mask(masked_len).to(self.device)
+        hidden_states = self.transformer.forward(src=src_embeddings, tgt=masked_embeddings, tgt_mask=shift_masked_attention_mask,
+        src_key_padding_mask=src_attention_mask, memory_key_padding_mask=src_attention_mask)
         
         # usually, forward() function is used to calculate logits~ not loss, we should calculate loss in training_step()
         # logits: (batch_size, masked_len, vocab_size)
