@@ -182,24 +182,24 @@ def construct_train_bi(src, tgt, src_file, tgt_file, masked_file, type_file, sug
 if __name__ == "__main__":
     # get_vocab("./dataset/wmt14_dev_data/bi_context_raw_data/dev.en2de.en", "./dataset/wmt14_dev_data/bi_context_raw_data/dev.de2en.de")
     # lowcase_file("dataset/en2de/train/upcase/train.de", "dataset/en2de/train/lowcase/train.de")
-    # get_vocab("./dataset/en2de/train/lowcase/train.en", "./dataset/en2de/train/lowcase/train.de")
+    get_vocab("./dataset/en2de/train/lowcase/train.en", "./dataset/en2de/train/lowcase/train.de")
 
     # 构建bi-context的数据集
-    with open("./dataset/en2de/train/lowcase/train.en") as f:
-        src_lines = f.read().splitlines()
-    with open("./dataset/en2de/train/lowcase/train.de") as g:
-        tgt_lines = g.read().splitlines()
-    for idx in tqdm(range(len(src_lines))):
-        # print(idx)
-        src = src_lines[idx]
-        tgt = tgt_lines[idx]
-        construct_train_bi(src, tgt, 
-                            "./dataset/en2de/train/train.en2de.de.out.bi_context.src",
-                            "./dataset/en2de/train/train.en2de.de",
-                            "./dataset/en2de/train/train.en2de.de.out.bi_context.masked",
-                            "./dataset/en2de/train/train.en2de.de.out.bi_context.type",
-                            "./dataset/en2de/train/train.en2de.de.out.bi_context.suggestion"
-                            )
-    avg = (sum(tgt_len_lst) - sum(masked_len_lst)) / len(tgt_len_lst)
-    print(avg)
+    # with open("./dataset/en2de/train/lowcase/train.en") as f:
+    #     src_lines = f.read().splitlines()
+    # with open("./dataset/en2de/train/lowcase/train.de") as g:
+    #     tgt_lines = g.read().splitlines()
+    # for idx in tqdm(range(len(src_lines))):
+    #     # print(idx)
+    #     src = src_lines[idx]
+    #     tgt = tgt_lines[idx]
+    #     construct_train_bi(src, tgt, 
+    #                         "./dataset/en2de/train/train.en2de.de.out.bi_context.src",
+    #                         "./dataset/en2de/train/train.en2de.de",
+    #                         "./dataset/en2de/train/train.en2de.de.out.bi_context.masked",
+    #                         "./dataset/en2de/train/train.en2de.de.out.bi_context.type",
+    #                         "./dataset/en2de/train/train.en2de.de.out.bi_context.suggestion"
+    #                         )
+    # avg = (sum(tgt_len_lst) - sum(masked_len_lst)) / len(tgt_len_lst)
+    # print(avg)
          
