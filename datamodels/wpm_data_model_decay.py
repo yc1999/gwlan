@@ -2,13 +2,13 @@
 This data model is specific for the WPM(Word Predict Model),
 which is proposed by the paper: GWLAN: A General Word-Level AutocompletioN for Computer-Aided Translation
 """
-#TODO: dynamic mask train dataset
 from argparse import ArgumentParser
 from ast import arg
 import copy
 import json
 import random
 from tqdm import tqdm
+import math
 import os
 from typing import Optional
 import sys
@@ -137,8 +137,10 @@ class WPMDataModel(pl.LightningDataModule):
         parser.add_argument("--vocab_size", type=int, required=True, help="vocab size")
         parser.add_argument("--d_model", type=int, required=True, help="dimension of the model")
         parser.add_argument("--learning_rate", type=float, required=True, help="learning rate for optimizer.")
-        parser.add_argument("--warmup_ratio", type=float, required=True, help="warmup_ratio for training with warm up.")
+        parser.add_argument("--warmup_ratio", type=float, default=-1, help="warmup_ratio for training with warm up.")
         parser.add_argument("--dropout", type=float, default=0.1, help="dropout ratio for model.")
+        parser.add_argument("--scheduler", type=str, default="linear", required=True, help="learning rate scheduler.")
+        parser.add_argument("--warmup_steps", type=int, default=-1, help="warmup steps for training.")
 
         parser.add_argument("--train_batch_size", default=8, type=int, help="Batch size per GPU/CPU for training.")
         parser.add_argument("--eval_batch_size", default=32, type=int, help="Batch size per GPU/CPU for evaluation.")
@@ -168,8 +170,8 @@ class WPMDataset(Dataset):
 
     def __getitem__(self, index):
         if self.mode == "train":
-            # dynamic mask here
             example = self.examples[index]
+            # dynamic mask here
             example = self.construct_train_bi_context_example(example)
             return example
         elif self.mode == "dev":
@@ -190,8 +192,8 @@ class WPMDataset(Dataset):
         if mode == "train":
             if args.train_dataset_ratio != 1.0:
                 examples = random.sample(examples, int(len(examples) * args.train_dataset_ratio ))
+            print("Num of examples are: ",len(examples))
             return examples
-            # print("examples: ",len(examples))
 
         elif mode == "dev" or mode == "test":
             return examples
@@ -239,51 +241,70 @@ class WPMDataset(Dataset):
             raise NotImplementedError
 
     def construct_train_bi_context_example(self, example):
-        src = example.src
         tgt = example.tgt
         tgt_word_lst = tgt.split()
+        tgt_len = len(tgt_word_lst)
+
+        # select a pivot from the tgt_word_lst
+        pivot = random.randint( 0 , len(tgt_word_lst)-1 )
+        max_span_length = int( math.ceil( tgt_len*0.25) )
+        left_shift = min( random.randint(0, pivot), max_span_length )
+        right_shift = min( random.randint(0, len(tgt_word_lst)-1-pivot), max_span_length )
+        left = pivot - left_shift
+        right = pivot + right_shift
         
-        # 如果全是小于等于4的字母
-        contains_large = sum([len(word) > 4 for word in tgt_word_lst])
-        if contains_large > 0:
-            word_masked_idx = random.randint( 0, len(tgt_word_lst)-1 )
-            word = tgt_word_lst[word_masked_idx]
-            while len(word) <= 4:
-                word_masked_idx = random.randint(0, len(tgt_word_lst)-1)
-                word = tgt_word_lst[word_masked_idx]
-        else:
-            word_masked_idx = random.randint( 0, len(tgt_word_lst)-1 )
-            word = tgt_word_lst[word_masked_idx]
-            while len(word) < 1:
-                word_masked_idx = random.randint(0, len(tgt_word_lst)-1)
-                word = tgt_word_lst[word_masked_idx]
-
-        if len(word) != 1:
-            type_masked_idx = random.randint(1, len(word)-1)    
-            type = word[:type_masked_idx]
-        else:
-            type = word
+        # mask the span [left, right]
+        masked_tgt_word_lst = copy.deepcopy(tgt_word_lst)
+        for idx in range(left, right+1):
+            masked_tgt_word_lst[idx] = "<mask>"
+        assert len(tgt_word_lst) == len(masked_tgt_word_lst)
+        masked = " ".join(masked_tgt_word_lst)
         
-        # 对word_masked_idx之前的字符进行
-        if word_masked_idx == 0:
-            prefix = ""
-        else:
-            pl1 = 0
-            pl2 = random.randint(max(0, word_masked_idx-7), word_masked_idx-1)
-            # pl1, pl2 = min(pl1, pl2), max(pl1, pl2)
-            prefix = " ".join(tgt_word_lst[pl1 : pl2+1])
 
-        if word_masked_idx == len(tgt_word_lst)-1:
-            suffix = ""
-        else:
-            pr1 = random.randint(word_masked_idx+1, min(word_masked_idx+7,len(tgt_word_lst)-1))
-            pr2 = len(tgt_word_lst)-1
-            # pr1, pr2 = min(pr1, pr2), max(pr1, pr2)
-            suffix = " ".join(tgt_word_lst[pr1 : pr2+1])
+        # tgt_word_lst = tgt.split()
+        
+        # # 如果全是小于等于4的字母
+        # contains_large = sum([len(word) > 4 for word in tgt_word_lst])
+        # if contains_large > 0:
+        #     word_masked_idx = random.randint( 0, len(tgt_word_lst)-1 )
+        #     word = tgt_word_lst[word_masked_idx]
+        #     while len(word) <= 4:
+        #         word_masked_idx = random.randint(0, len(tgt_word_lst)-1)
+        #         word = tgt_word_lst[word_masked_idx]
+        # else:
+        #     word_masked_idx = random.randint( 0, len(tgt_word_lst)-1 )
+        #     word = tgt_word_lst[word_masked_idx]
+        #     while len(word) < 1:
+        #         word_masked_idx = random.randint(0, len(tgt_word_lst)-1)
+        #         word = tgt_word_lst[word_masked_idx]
 
-        masked = " ".join( list(filter(None, [prefix, "<mask>", suffix])) ) # filter empty string
+        # if len(word) != 1:
+        #     type_masked_idx = random.randint(1, len(word)-1)    
+        #     type = word[:type_masked_idx]
+        # else:
+        #     type = word
+        
+        # # 对word_masked_idx之前的字符进行
+        # if word_masked_idx == 0:
+        #     prefix = ""
+        # else:
+        #     pl1 = 0
+        #     pl2 = random.randint(max(0, word_masked_idx-7), word_masked_idx-1)
+        #     # pl1, pl2 = min(pl1, pl2), max(pl1, pl2)
+        #     prefix = " ".join(tgt_word_lst[pl1 : pl2+1])
 
-        return InputExample(guid=example.guid, src=example.src, masked=masked, type=type, suggestion=word, tgt=example.tgt)
+        # if word_masked_idx == len(tgt_word_lst)-1:
+        #     suffix = ""
+        # else:
+        #     pr1 = random.randint(word_masked_idx+1, min(word_masked_idx+7,len(tgt_word_lst)-1))
+        #     pr2 = len(tgt_word_lst)-1
+        #     # pr1, pr2 = min(pr1, pr2), max(pr1, pr2)
+        #     suffix = " ".join(tgt_word_lst[pr1 : pr2+1])
+
+        # masked = " ".join( list(filter(None, [prefix, "<mask>", suffix])) ) # filter empty string
+
+        # For each tgt-lang sentence, we will mask each word in the random selected span! (Because I found that mask only one word is not very satisfying)
+        return InputExample(guid=example.guid, src=example.src, masked=masked, type=None, suggestion=None, tgt=example.tgt)
 
     @staticmethod
     def convert_examples_to_features(src_tokenizer, masked_tokenizer, examples):
@@ -311,33 +332,57 @@ class WPMDataset(Dataset):
             masked_encoded_results = masked_tokenizer.tokenize(example.masked)
             masked_input_ids = [ masked_tokenizer.sos_token_id ] + masked_encoded_results["input_ids"] + [ masked_tokenizer.eos_token_id ]
             masked_attention_mask = [False] + masked_encoded_results["attention_mask"] + [False]
-            masked_index = masked_input_ids.index(masked_tokenizer.mask_token_id)
-            
-            # masked_position_ids version 1
+
+            # masked_postion_ids version 1
             masked_position_ids = [0 for _ in range(len(masked_input_ids))]
             position_id = 0
-            for idx in range( len(masked_position_ids) ):
-                if idx == masked_index:
+            for idx, token_id in enumerate(masked_input_ids):
+                if token_id == masked_tokenizer.mask_token_id and ( (idx == 0) or (masked_input_ids[idx-1] != masked_tokenizer.mask_token_id)):
+                    masked_attention_mask[idx] = True
                     masked_position_ids[idx] = position_id
-                elif idx == masked_index - 1:
-                    masked_position_ids[idx] = position_id
+                    position_id += 1
+                elif token_id == masked_tokenizer.mask_token_id and masked_input_ids[idx-1] == masked_tokenizer.mask_token_id:
+                    masked_attention_mask[idx] = True
+                    masked_position_ids[idx] = masked_position_ids[idx-1]
                 else:
                     masked_position_ids[idx] = position_id
                     position_id += 1
-
+            masked_seq_len = len(masked_input_ids)
+            masked_len_lst.append(masked_seq_len)
             # masked_position_ids version 2
+            # masked_index = masked_input_ids.index(masked_tokenizer.mask_token_id) 
+            # masked_position_ids = [0 for _ in range(len(masked_input_ids))]
+            # position_id = 0
+            # for idx in range( len(masked_position_ids) ):
+            #     if idx == masked_index:
+            #         masked_position_ids[idx] = position_id
+            #     elif idx == masked_index - 1:
+            #         masked_position_ids[idx] = position_id
+            #     else:
+            #         masked_position_ids[idx] = position_id
+            #         position_id += 1
+
+            # masked_position_ids version 3
             # masked_position_ids = [2 for _ in range(len(masked_input_ids))]
             # masked_position_ids[:masked_index]  = [0 for _ in range(masked_index)]
             # masked_position_ids[masked_index] = 1
-            
-            masked_seq_len = len(masked_input_ids)
-            masked_len_lst.append(masked_seq_len)
-
+        
 
             type = example.type # a str reprensents human typed characters
-            suggestion = masked_tokenizer.convert_token_to_id(example.suggestion)
-            labels = [  -100 if token_id != masked_tokenizer.mask_token_id else suggestion for token_id in masked_input_ids ]
-            type_mask = [ word.startswith(type) for word in masked_tokenizer.vocabs ]
+            if type != None:
+                # for dev and test
+                suggestion = masked_tokenizer.convert_token_to_id(example.suggestion)
+                labels = [  -100 if token_id != masked_tokenizer.mask_token_id else suggestion for token_id in masked_input_ids ]
+                type_mask = [ word.startswith(type) for word in masked_tokenizer.vocabs ]
+            else:
+                # for training
+                suggestion = masked_tokenizer.convert_token_to_id(example.suggestion)
+                labels = [ masked_tokenizer.sos_token_id ]  + masked_tokenizer.tokenize(example.tgt)["input_ids"] + [ masked_tokenizer.eos_token_id ]
+                assert len(masked_input_ids) == len(labels)
+                for idx, token_idx in enumerate(masked_input_ids):
+                    if token_idx != masked_tokenizer.mask_token_id:
+                        labels[idx] = -100
+                type_mask = [False for _ in masked_tokenizer.vocabs]
 
             features.append(
                 InputFeature(
@@ -435,9 +480,9 @@ if __name__ == "__main__":
     wpm_data_model.setup('fit')
 
     train_dataloader = wpm_data_model.train_dataloader()
-    for i in range(3):
-        for batch in train_dataloader:
+    # for i in range(3):
+    for batch in train_dataloader:
             # batch = next( iter(train_dataloader) )
-            print(batch)
+        print(batch)
     print("yes")
     
